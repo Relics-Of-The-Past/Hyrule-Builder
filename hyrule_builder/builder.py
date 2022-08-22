@@ -1,6 +1,7 @@
 # pylint: disable=invalid-name,bare-except,missing-docstring,bad-continuation,import-error
 # pylint: disable=unsupported-assignment-operation
 import json
+import collections.abc
 import shutil
 import sys
 from dataclasses import dataclass
@@ -21,7 +22,9 @@ from . import (
     AAMP_EXTS,
     BYML_EXTS,
     EXEC_DIR,
+    PROFILE_RATIOS,
     SARC_EXTS,
+    NO_CONVERT_EXTS,
     STOCK_FILES,
     RSTB_EXCLUDE_EXTS,
     RSTB_EXCLUDE_NAMES,
@@ -134,6 +137,69 @@ def load_rstb(be: bool, file: Path = None) -> ResourceSizeTable:
     table.name_map = {k: v for k, v in ref_contents["name_map"].items()}
     return table
 
+class files_last_modified:
+    def __init__(self, mod_source_path: Path, single):
+        self.mod = mod_source_path
+        self.save_data_path = self.mod / 'modified_times.json'
+        self.single = single
+        self.modified_data = {}
+
+    def _nest_dict(self, key_list: list, value):
+        init_dict = {}
+        current_dict = init_dict
+        for key in key_list:
+            if key != key_list[-1]:
+                current_dict.update({key: {}})
+                current_dict = current_dict[key]
+            else:
+                current_dict.update({key: value})
+        return init_dict
+
+    def _update(self, d, update):
+        for key, value in update.items():
+            if isinstance(value, collections.abc.Mapping):
+                d[key] = self._update(d.get(key, {}), value)
+            else:
+                d[key] = value
+        return d
+
+    def _get_file_last_modified(self, file: Path):
+        file_entry = {}
+        file_modified = file.stat().st_mtime
+        relative_path = file.relative_to(self.mod)
+        file_entry.update({str(relative_path).replace('\\', '/'): file_modified})
+        return file_entry
+
+    def check_current_modified_time(self):
+        files = {
+            f
+            for f in self.mod.rglob("**/*")
+            if f.is_file()and "build" not in f.parts
+            and f.suffix not in {'.json'}
+            and not str(f.relative_to(self.mod)).startswith(".")
+        }
+        if self.single or len(files) < 2:
+                for f in files:
+                    self.modified_data.update({f: self._get_file_last_modified(f)})
+        else:
+            p = Pool(maxtasksperchild=256)
+            results = p.map(self._get_file_last_modified, files)
+            for r in results:
+                self._update(self.modified_data, r)
+        return
+
+    def save_data(self):
+        with open(self.save_data_path, 'wt') as write_file:
+            write_file.write(json.dumps(self.modified_data, indent=2))
+        return
+
+    def load_from_file(self, file_path):
+        try:
+            with open(file_path) as read_past_changes:
+                self.modified_data = json.loads(read_past_changes.read())
+        except:
+            print('First time building... This process will take longer than future builds...')
+
 class ModBuilder:
     mod: Path
     out: Path
@@ -177,7 +243,25 @@ class ModBuilder:
         self.warn = not args.no_warn
         self.strict = args.hard_warn
         self.no_rstb = args.no_rstb
+        self.asset_dir = self.mod / 'NX_Assets'
         self._calc = SizeCalculator()
+
+        file_changes = files_last_modified(self.mod, self.single)
+        previous_changes = files_last_modified(self.mod, self.single)
+        previous_changes.load_from_file(previous_changes.save_data_path)
+        file_changes.check_current_modified_time()
+        self.changed_files = []
+        for file, modified_time in file_changes.modified_data.items():
+            if file in previous_changes.modified_data.keys():
+                if modified_time > previous_changes.modified_data[file]:
+                    self.changed_files.append(Path(self.mod / file).relative_to(self.mod))
+                else:
+                    continue
+            else:
+                self.changed_files.append(Path(self.mod / file).relative_to(self.mod))
+        file_changes.save_data()
+        del previous_changes
+        del file_changes
 
     def warning(self, msg: str):
         if self.strict:
@@ -213,12 +297,26 @@ class ModBuilder:
         return val
 
     def _copy_file(self, f: Path):
-        t: Path = self.out / f.relative_to(self.mod)
+        t: Path = self.out / f
+        if t.exists():
+            if t.is_file():
+                t.unlink()
+            else:
+                shutil.rmtree(t)
         if not t.parent.exists():
+            if is_in_sarc(f):
+                sarc_name = [p for p in f.parts if Path(p).suffix in SARC_EXTS]
+                sarc_path = Path(''.join(t.parts[0:1]) + '/'.join(t.parts[1:list(t.parts).index(str(sarc_name[0])) + 1]))
+                if sarc_path.is_file():
+                    sarc_path.unlink()
             t.parent.mkdir(parents=True, exist_ok=True)
+        if not self.be == True:
+            if f.suffix in NO_CONVERT_EXTS:
+                f = self.asset_dir / f.name
         if is_in_sarc(f):
-            shutil.copy(f, t)
+            shutil.copy(self.mod / f, t)
         else:
+            f = self.mod / f
             data = f.read_bytes()
             canon = get_canon_name(f.relative_to(self.mod))
             t.write_bytes(data)
@@ -244,27 +342,36 @@ class ModBuilder:
             return rv
         try:
             ext = f.with_suffix("").suffix
-            t = self.out / f.relative_to(self.mod).with_suffix("")
+            t = self.out / f.with_suffix("")
             if not t.parent.exists():
                 t.parent.mkdir(parents=True, exist_ok=True)
             data: bytes
             if ext in BYML_EXTS | {".info"}:
-                data = self._build_byml(f)
+                if 'Actor' not in f.parts or 'Pack' not in f.parts:
+                    if f in self.changed_files:
+                        data = self._build_byml(self.mod / f)
+                    else:
+                        return {}
+                else:
+                    data = self._build_byml(self.mod / f)
+
             elif ext in AAMP_EXTS:
-                data = self._build_aamp(f)
+                data = self._build_aamp(self.mod / f)
             else:
                 self.warning(f"Unknown YAML file {f.name}")
                 return {}
+            if t.exists():
+                t.unlink()
             t.write_bytes(data if not t.suffix.startswith(".s") else compress(data))
             canon = get_canon_name(t.relative_to(self.out))
             if self.table.is_file_modded(canon, data) and _should_rstb(t):
                 return {canon: self._get_rstb_val(t.name.replace(".s", "."), data)}
         except Exception as e:  # pylint: disable=broad-except
             raise RuntimeError(
-                f"Failed to build {f.relative_to(self.mod).as_posix()}. {e}"
+                f"Failed to build {f.as_posix()}. {e}"
             )
         if self.verbose:
-            print(f"Built {f.relative_to(self.mod).as_posix()}")
+            print(f"Built {f.as_posix()}")
         return rv
 
     def _parse_actor_link(self, link: Path) -> dict:
@@ -494,7 +601,28 @@ class ModBuilder:
         for actor_file in (self.out / self.content / "Actor" / "ActorInfo").glob(
             "*.info"
         ):
-            actors.append(oead.byml.from_binary(actor_file.read_bytes()))
+            actor_data = dict(oead.byml.from_binary(actor_file.read_bytes()))
+            # Generate more accurate instsize data from instsize values in actorinfo files
+            if 'instsize' in actor_data.keys():
+                profile = actor_data.get("profile")
+                if not profile:
+                    print(
+                        f"Could not detect profile for actor {actor_data['name']}. "
+                        "The instSize value was not converted."
+                    )
+                    continue
+                ratio = PROFILE_RATIOS[profile]
+                actor_data["instSize"] = oead.S32(
+                    int(
+                        (
+                            (actor_data["instSize"].v * ratio)
+                            if not self.be
+                            else (actor_data["instSize"].v / ratio)
+                        )
+                        * 1.1 # safety buffer, since we're dealing with averages
+                    )
+                )
+            actors.append(actor_data)
             actor_file.unlink()
         hashes = oead.byml.Array(
             [
@@ -513,6 +641,7 @@ class ModBuilder:
         )
 
     def build(self):
+        p = None
         if not ((self.mod / self.content).exists() or (self.mod / self.aoc).exists()):
             print(
                 "The specified directory does not appear to have a valid folder structure."
@@ -521,14 +650,14 @@ class ModBuilder:
             sys.exit(2)
         if self.out.exists():
             print("Removing old build...")
-            shutil.rmtree(self.out)
+            #shutil.rmtree(self.out)
         print("Scanning source files...")
+        print('Finding changed files...')
+
         files = {
             f
-            for f in self.mod.rglob("**/*")
-            if f.is_file()
-            and "build" not in f.parts
-            and not str(f.relative_to(self.mod)).startswith(".")
+            for f in self.changed_files
+            if not str(f).startswith('NX_Assets')
         }
         other_files = {f for f in files if f.suffix not in {".yml", ".msyt"}}
         yml_files = {f for f in files if f.suffix == ".yml"}
@@ -536,7 +665,6 @@ class ModBuilder:
         rvs = {}
         if not self.single:
             p = Pool(maxtasksperchild=256)
-
         print("Copying miscellaneous files...")
         if self.single or len(other_files) < 2:
             for f in other_files:
@@ -557,7 +685,7 @@ class ModBuilder:
             for d in msg_dirs:
                 msg_dir = next(d.glob("Message/*"))
                 new_dir = self.out / msg_dir.relative_to(self.mod).with_suffix(".ssarc")
-                pymsyt.create(str(msg_dir), self.be, output=str(new_dir))
+                pymsyt.create(str(msg_dir), platform=('switch' if not self.be else 'wiiu'), msbt_ouput=str(new_dir))
 
         print("Building AAMP and BYML files...")
         if self.single or len(yml_files) < 2:
