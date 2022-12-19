@@ -179,8 +179,8 @@ class files_last_modified:
             and not str(f.relative_to(self.mod)).startswith(".")
         }
         if self.single or len(files) < 2:
-                for f in files:
-                    self.modified_data.update({f: self._get_file_last_modified(f)})
+            for f in files:
+                self.modified_data.update({f.name: self._get_file_last_modified(f)})
         else:
             p = Pool(maxtasksperchild=256)
             results = p.map(self._get_file_last_modified, files)
@@ -195,7 +195,7 @@ class files_last_modified:
 
     def load_from_file(self, file_path):
         try:
-            with open(file_path) as read_past_changes:
+            with open(file_path, 'rt') as read_past_changes:
                 self.modified_data = json.loads(read_past_changes.read())
         except:
             print('First time building... This process will take longer than future builds...')
@@ -648,7 +648,7 @@ class ModBuilder:
             )
             print("Run `hyrule_builder build --help` for more information.")
             sys.exit(2)
-        if self.out.exists():
+        if self.out.exists() and len(self.changed_files) == 0:
             print("Removing old build...")
             #shutil.rmtree(self.out)
         print("Scanning source files...")
@@ -685,7 +685,7 @@ class ModBuilder:
             for d in msg_dirs:
                 msg_dir = next(d.glob("Message/*"))
                 new_dir = self.out / msg_dir.relative_to(self.mod).with_suffix(".ssarc")
-                pymsyt.create(str(msg_dir), platform=('switch' if not self.be else 'wiiu'), msbt_ouput=str(new_dir))
+                pymsyt.create(str(msg_dir), self.be, output=str(new_dir))
 
         print("Building AAMP and BYML files...")
         if self.single or len(yml_files) < 2:
