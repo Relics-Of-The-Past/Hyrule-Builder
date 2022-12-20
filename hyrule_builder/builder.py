@@ -180,7 +180,7 @@ class files_last_modified:
         }
         if self.single or len(files) < 2:
             for f in files:
-                self.modified_data.update({f.name: self._get_file_last_modified(f)})
+                self.modified_data.update(self._get_file_last_modified(f))
         else:
             p = Pool(maxtasksperchild=256)
             results = p.map(self._get_file_last_modified, files)
@@ -254,11 +254,11 @@ class ModBuilder:
         for file, modified_time in file_changes.modified_data.items():
             if file in previous_changes.modified_data.keys():
                 if modified_time > previous_changes.modified_data[file]:
-                    self.changed_files.append(Path(self.mod / file).relative_to(self.mod))
+                    self.changed_files.append(Path(self.mod / file))
                 else:
                     continue
             else:
-                self.changed_files.append(Path(self.mod / file).relative_to(self.mod))
+                self.changed_files.append(Path(self.mod / file))
         file_changes.save_data()
         del previous_changes
         del file_changes
