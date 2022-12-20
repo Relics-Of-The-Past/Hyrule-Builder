@@ -297,7 +297,7 @@ class ModBuilder:
         return val
 
     def _copy_file(self, f: Path):
-        t: Path = self.out / f
+        t: Path = self.out / f.relative_to(self.mod)
         if t.exists():
             if t.is_file():
                 t.unlink()
