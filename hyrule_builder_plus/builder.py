@@ -254,11 +254,11 @@ class ModBuilder:
         for file, modified_time in file_changes.modified_data.items():
             if file in previous_changes.modified_data.keys():
                 if modified_time > previous_changes.modified_data[file]:
-                    self.changed_files.append(Path(self.mod / file))
+                    self.changed_files.append(Path(file))
                 else:
                     continue
             else:
-                self.changed_files.append(Path(self.mod / file))
+                self.changed_files.append(Path(file))
         file_changes.save_data()
         del previous_changes
         del file_changes
