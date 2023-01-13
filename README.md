@@ -1,6 +1,7 @@
-# Hyrule Builder
+# Hyrule Builder++
 
-A mod building tool for _The Legend of Zelda: Breath of the Wild_.
+A modified version of the [hyrule_builder](https://github.com/NiceneNerd/Hyrule-Builder) package to serve as an advanced module in other projects.
+Please note that this is a python **package** and will not function as a CLI tool on its own. It is meant to be incorporated into other tools.
 
 Hyrule Builder is designed to help BOTW modders more easily manage and edit their project files. It
 can "unbuild"/"decompile" game files to a source-like format. All SARCs are extracted, all BYML,
@@ -10,8 +11,12 @@ features to smooth the process.
 
 ## Setup
 
-Install Python 3.7+ (**64 bit version**), then run `pip install hyrule_builder`.
-
+Install Python 3.7+ (**64 bit version**), then run `pip install hyrule_builder++`.
+To use in a project, simply add
+```python
+import hyrule_builder_plus
+```
+to your code.
 ## Building and Unbuilding Mods
 
 To start a new Hyrule Builder project, take the mod files you would like to use and make sure they

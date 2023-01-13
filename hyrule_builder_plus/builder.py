@@ -17,7 +17,7 @@ from oead.yaz0 import compress
 import pymsyt
 from rstb import ResourceSizeTable, SizeCalculator
 
-from . import (
+from ..hyrule_builder import (
     AAMP_EXTS,
     BYML_EXTS,
     EXEC_DIR,
