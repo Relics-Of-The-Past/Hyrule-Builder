@@ -1,31 +1,22 @@
 # pylint: disable=missing-docstring
 from setuptools import setup
-from hyrule_builder.__version__ import VERSION
+from hyrule_builder_plus.__version__ import VERSION
 
 with open("README.md", "r") as readme:
     LONG = readme.read()
 
 
 setup(
-    name='hyrule_builder',
+    name='hyrule_builder_plus',
     version=VERSION,
-    author='NiceneNerd',
-    author_email='macadamiadaze@gmail.com',
-    description='A mod builder/unbuilder for The Legend of Zelda: Breath of the Wild',
+    author='SDarkMagic',
+    author_email='TheSDarkMagic@gmail.com',
+    description='A modified version of the hyrule_builder package to serve as an advanced module in other projects.',
     long_description=LONG,
     long_description_content_type='text/markdown',
-    url='https://github.com/NiceneNerd/Hyrule-Builder',
+    url='https://github.com/Relics-Of-The-Past/Hyrule-Builder',
     include_package_data=True,
-    packages=['hyrule_builder'],
-    entry_points={
-        'console_scripts': [
-            'hyrule_builder = hyrule_builder.__main__:main',
-            'rstb_to_json = hyrule_builder.rstb_main:rstb_to_json',
-            'json_to_rstb = hyrule_builder.rstb_main:json_to_rstb',
-            'unbuild_sarc = hyrule_builder.sarc_main:unbuild_sarc',
-            'build_sarc = hyrule_builder.sarc_main:build_sarc'
-        ]
-    },
+    packages=['hyrule_builder_plus'],
     classifiers=[
         'Development Status :: 3 - Alpha',
         'License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)',
