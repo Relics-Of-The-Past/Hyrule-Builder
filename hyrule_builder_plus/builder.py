@@ -297,7 +297,7 @@ class ModBuilder:
         return val
 
     def _copy_file(self, f: Path):
-        t: Path = self.out / f.relative_to(self.mod)
+        t: Path = self.out / f
         if t.exists():
             if t.is_file():
                 t.unlink()
@@ -685,7 +685,7 @@ class ModBuilder:
             for d in msg_dirs:
                 msg_dir = next(d.glob("Message/*"))
                 new_dir = self.out / msg_dir.relative_to(self.mod).with_suffix(".ssarc")
-                pymsyt.create(str(msg_dir), str(new_dir), 'switch' if self.be else 'wiiu')
+                pymsyt.create(str(msg_dir), self.be, str(new_dir))
 
         print("Building AAMP and BYML files...")
         if self.single or len(yml_files) < 2:
