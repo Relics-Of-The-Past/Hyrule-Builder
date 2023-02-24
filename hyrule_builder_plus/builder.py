@@ -353,6 +353,10 @@ class ModBuilder:
                     else:
                         return {}
                 else:
+                    if ext == '.info':
+                        data = self._build_byml(self.mod / f)
+                    else:
+                        # Find parent directories and all child files. Add to files to build.
                     data = self._build_byml(self.mod / f)
 
             elif ext in AAMP_EXTS:
@@ -650,7 +654,7 @@ class ModBuilder:
             sys.exit(2)
         if self.out.exists() and len(self.changed_files) == 0:
             print("Removing old build...")
-            #shutil.rmtree(self.out)
+            shutil.rmtree(self.out)
         print("Scanning source files...")
         print('Finding changed files...')
 
@@ -687,6 +691,7 @@ class ModBuilder:
                 new_dir = self.out / msg_dir.relative_to(self.mod).with_suffix(".ssarc")
                 pymsyt.create(str(msg_dir), self.be, str(new_dir))
 
+        # Reposition yml building to happen right before any sarcs are handled so only changed ymls can be built and copied as well as their requirements
         print("Building AAMP and BYML files...")
         if self.single or len(yml_files) < 2:
             for f in yml_files:

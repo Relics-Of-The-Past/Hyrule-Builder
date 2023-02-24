@@ -166,6 +166,11 @@ BYML_EXTS = {
     ".sbgsvdata",
 }
 
+GAMEFILE_DIR_NAMES = {
+    "Actor/Pack",
+    "Pack"
+}
+
 NO_CONVERT_EXTS = {
     ".sbfres",
     ".bfres",
