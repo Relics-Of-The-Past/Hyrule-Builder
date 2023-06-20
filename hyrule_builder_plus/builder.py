@@ -4,6 +4,7 @@ import json
 import collections.abc
 import shutil
 import sys
+import os
 from dataclasses import dataclass
 from io import BytesIO
 from functools import partial
@@ -244,7 +245,10 @@ class ModBuilder:
         self.strict = args.hard_warn
         self.no_rstb = args.no_rstb
         self.asset_dir = self.mod / 'NX_Assets'
+        self.changed_actor_files = []
+        self.changed_actors = []
         self._calc = SizeCalculator()
+        self.sarcs_to_build = {}
 
         file_changes = files_last_modified(self.mod, self.single)
         previous_changes = files_last_modified(self.mod, self.single)
@@ -314,7 +318,10 @@ class ModBuilder:
             if f.suffix in NO_CONVERT_EXTS:
                 f = self.asset_dir / f.name
         if is_in_sarc(f):
+            sarc_name = [p for p in f.parts if Path(p).suffix in SARC_EXTS]
+            sarc_path = Path(''.join(t.parts[0:1]) + '/'.join(t.parts[1:list(t.parts).index(str(sarc_name[0])) + 1]))
             shutil.copy(self.mod / f, t)
+            self.sarcs_to_build.update({sarc_name: sarc_path})
         else:
             f = self.mod / f
             data = f.read_bytes()
@@ -357,7 +364,7 @@ class ModBuilder:
                         data = self._build_byml(self.mod / f)
                     else:
                         # Find parent directories and all child files. Add to files to build.
-                    data = self._build_byml(self.mod / f)
+                        data = self._build_byml(self.mod / f)
 
             elif ext in AAMP_EXTS:
                 data = self._build_aamp(self.mod / f)
@@ -668,7 +675,8 @@ class ModBuilder:
         f: Path
         rvs = {}
         if not self.single:
-            p = Pool(maxtasksperchild=256)
+            available_cpus = len(os.sched_getaffinity(0))
+            p = Pool(processes=available_cpus, maxtasksperchild=256)
         print("Copying miscellaneous files...")
         if self.single or len(other_files) < 2:
             for f in other_files:
@@ -691,6 +699,24 @@ class ModBuilder:
                 new_dir = self.out / msg_dir.relative_to(self.mod).with_suffix(".ssarc")
                 pymsyt.create(str(msg_dir), self.be, str(new_dir))
 
+        # Find all changed actor files
+        for f in yml_files:
+            if ('Actor' in f.relative_to(self.mod).parts and f.name.split('.')[-2] != 'bxml'):
+                self.changed_actor_files.append(f.relative_to(self.mod))
+            elif (f.name.split('.')[-2] == 'bxml'):
+                if f not in self.changed_actors:
+                    self.changed_actors.append(f)
+        all_actors = {
+            f for f in (self.out / self.content / "Actor" / "ActorLink").glob("*.bxml")
+        }
+
+        for actor in all_actors:
+            link = self._parse_actor_link(actor)
+            for i in link:
+                if i in self.changed_actor_files:
+                    if i not in self.changed_actors:
+                        self.changed_actors.append(i)
+
         # Reposition yml building to happen right before any sarcs are handled so only changed ymls can be built and copied as well as their requirements
         print("Building AAMP and BYML files...")
         if self.single or len(yml_files) < 2:
@@ -710,29 +736,27 @@ class ModBuilder:
             (self.out / main_aoc / "Pack").mkdir(parents=True, exist_ok=True)
             (self.out / main_aoc / "Pack" / "AocMainField.pack").write_bytes(b"")
 
-        if (self.mod / self.content / "Actor" / "ActorInfo").is_dir():
+        if (self.mod / self.content / "Actor" / "ActorInfo").is_dir() and self.changed_actors:
             print("Building actor info...")
             self._build_actorinfo()
 
-        actors = {
-            f for f in (self.out / self.content / "Actor" / "ActorLink").glob("*.bxml")
-        }
-        if actors:
+        if self.changed_actors:
             (self.out / self.content / "Actor" / "Pack").mkdir(
                 parents=True, exist_ok=True
             )
             print("Building actor packs...")
-            if self.single or len(actors) < 2:
-                for a in actors:
+            if self.single or len(self.changed_actors) < 2:
+                for a in self.changed_actors:
                     rvs.update(self._build_actor(a))
             else:
                 try:
-                    results = p.map(self._build_actor, actors)
+                    results = p.map(self._build_actor, self.changed_actors)
                 except RuntimeError as err:
                     print(err)
                     sys.exit(1)
                 for r in results:
                     rvs.update(r)
+
         for d in (self.out / self.content / "Physics").glob("*"):
             if d.stem not in ["StaticCompound", "TeraMeshRigidBody"]:
                 shutil.rmtree(d)
@@ -743,6 +767,7 @@ class ModBuilder:
         }
 
         print("Building SARC files...")
+        # Use self.sarcs_to_build here to first copy unmodified files that the sarc contains before building
         dirs = {d for d in self.out.rglob("**/*") if d.is_dir()}
         sarc_folders = {
             d for d in dirs if d.suffix in SARC_EXTS and d.suffix != ".pack"
